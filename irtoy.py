@@ -19,6 +19,7 @@
 
 import time
 import binascii
+import logging
 
 __author__ = 'Chris LeBlanc'
 __version__ = '0.2.6'
@@ -35,6 +36,9 @@ class IrToy(object):
 
     def __init__(self, serialDevice):
         '''Create a new IrToy instance using the serial device for the USB IR Toy'''
+        # setting logger
+        self._logger = logging.getLogger('IrToy')
+
         self.toy = serialDevice
 
         self.sleepTime = 0.05
@@ -43,6 +47,7 @@ class IrToy(object):
         self.complete = None
 
         self.requiredVersion = 22
+        self.toy.flushOutput()
         hardware, revision = self.firmware_revision()
         if self.firmware_revision()[1] < self.requiredVersion:
             raise FirmwareVersionError("pyirtoy will only work with firmware version %d or greater, current=%d"
@@ -52,7 +57,6 @@ class IrToy(object):
         self._setSamplingMode()
 
         self.transmitMode = False
-
 
     def firmware_revision(self):
         '''Return the hardware and firmware revision returned as a tuple'''
@@ -68,6 +72,22 @@ class IrToy(object):
 
     def _sleep(self):
         time.sleep(self.sleepTime)
+        self._logger.debug('sleep')
+
+    def _setIRMode(self):
+        '''set the IR Toy to use ir mode to stop sampling'''
+        self.reset()
+
+        self.toy.write(b'IR')
+
+        self._sleep()
+
+        # self.protocolVersion = self.toy.read(3)
+
+        # self._sleep()
+
+    def IRMode(self):
+        return self._setIRMode()
 
     def _setSamplingMode(self):
         '''set the IR Toy to use sampling mode, which we use exclusively'''
@@ -113,7 +133,14 @@ class IrToy(object):
         self._sleep()
         self._writeList([0x26]) #Enable transmit handshake
         self._writeList([0x25]) #Enable transmit notify on complete
-        self._writeList([0x24]) #Enable transmit byte count report
+        
+        # 0x24 is in http://dangerousprototypes.com/docs/USB_IR_Toy:_Sampling_mode#Enable_transmit_byte_count_.280x24.29
+        # but it works like 0x24 ('$') - Trigger the bootloader (no jumper required)
+        # at http://dangerousprototypes.com/docs/USB_IR_Toy:_IRman_decoder_mode
+        # so comment this line.
+        # it also excluded while monitoring serial port communication in WinLIRC
+
+        # self._writeList([0x24]) #Enable transmit byte count report
         self._writeList([0x03], check_handshake=True) #Expect to receive packets to transmit
         self.transmitMode = True
 
@@ -155,6 +182,7 @@ class IrToy(object):
         self._writeList([0x00]*5)
         self.transmitMode = False
         self._sleep()
+        self._logger.info("IrToy - Reset")
 
     def transmit(self, code):
         '''switch to transmit mode and write the list (or list-like) set of ints to the toy for transmission,
@@ -174,6 +202,7 @@ class IrToy(object):
         try:
             self._sleep()
             self._setTransmit()
+            self._sleep()
             self._writeList(code, check_handshake=True)
             self._sleep()
             self._getTransmitReport()
